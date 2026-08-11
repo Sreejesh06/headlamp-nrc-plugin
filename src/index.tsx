@@ -14,19 +14,33 @@
  * limitations under the License.
  */
 
-import { registerAppBarAction } from '@kinvolk/headlamp-plugin/lib';
+import { registerRoute, registerSidebarEntry } from '@kinvolk/headlamp-plugin/lib';
+import { NodeReadinessRuleDetail } from './components/NodeReadinessRuleDetail';
+import { NodeReadinessRuleList } from './components/NodeReadinessRuleList';
+import { NodeReadinessRule } from './resources/nodeReadinessRule';
 
-// Below are some imports you may want to use.
-//   See README.md for links to plugin development documentation.
-// import { Headlamp, K8s, useTranslation } from '@kinvolk/headlamp-plugin/lib';
-// import { SectionBox } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
-// import { K8s } from '@kinvolk/headlamp-plugin/lib/K8s';
-// import { Typography } from '@mui/material';
+// Register sidebar navigation entry for Node Readiness Rules
+registerSidebarEntry({
+  name: 'NodeReadinessRules',
+  url: '/nrc/nodereadinessrules',
+  icon: 'mdi:checkbox-marked-circle-outline',
+  label: 'Node Readiness Rules',
+});
 
-registerAppBarAction(<span>Hello</span>);
+// Register route for the List View
+registerRoute({
+  path: '/nrc/nodereadinessrules',
+  sidebar: 'NodeReadinessRules',
+  name: 'Node Readiness Rules',
+  exact: true,
+  component: () => <NodeReadinessRuleList />,
+});
 
-// Example of using i18n (internationalization):
-// function MyComponent() {
-//   const { t } = useTranslation();
-//   return <div>{t('translation_key')}</div>;
-// }
+// Register route for the Details View
+registerRoute({
+  path: NodeReadinessRule.detailsRoute,
+  sidebar: 'NodeReadinessRules',
+  name: 'Node Readiness Rule Details',
+  exact: true,
+  component: () => <NodeReadinessRuleDetail />,
+});
