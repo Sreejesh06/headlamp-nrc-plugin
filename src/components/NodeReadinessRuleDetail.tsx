@@ -5,7 +5,7 @@ import {
   SectionBox,
   SimpleTable,
 } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
-import { Chip, Typography } from '@mui/material';
+import { Alert, Box, Chip, Typography } from '@mui/material';
 import { useParams } from 'react-router-dom';
 import { NodeReadinessRule } from '../model';
 
@@ -83,18 +83,25 @@ export function NodeReadinessRuleDetail() {
             id: 'nrc-evaluated-nodes',
             section: (
               <SectionBox title={`Evaluated Nodes (${evaluatedNodes.length})`}>
+                {evaluatedNodes.length > 5000 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Alert severity="warning">
+                      Showing first 5,000 evaluated nodes. Pagination is required to view all nodes.
+                    </Alert>
+                  </Box>
+                )}
                 {evaluatedNodes.length === 0 ? (
                   <Typography variant="body2" color="textSecondary">
                     No nodes currently evaluated by this rule.
                   </Typography>
                 ) : (
                   <SimpleTable
-                    data={evaluatedNodes}
+                    data={evaluatedNodes.slice(0, 5000)}
                     columns={[
                       {
                         label: 'Node Name',
                         getter: node => (
-                          <Link routeName="node" params={{ name: node.name }}>
+                          <Link routeName="Node" params={{ name: node.name }}>
                             {node.name}
                           </Link>
                         ),

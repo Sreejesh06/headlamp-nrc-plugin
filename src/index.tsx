@@ -29,7 +29,6 @@ registerSidebarEntry({
   parent: 'cluster',
   name: 'NodeReadinessRules',
   url: '/nrc/nodereadinessrules',
-  icon: 'mdi:checkbox-marked-circle-outline',
   label: 'Node Readiness Rules',
 });
 
@@ -57,4 +56,29 @@ registerDetailsViewSection(({ resource }) => {
     return <NodeReadinessInjected resource={resource} />;
   }
   return null;
+});
+
+// Inject NRC Status Column into the standard K8s Nodes List View
+import { registerResourceTableColumnsProcessor } from '@kinvolk/headlamp-plugin/lib';
+import { NodeListNRCStatus } from './NodeReadinessInjected';
+
+registerResourceTableColumnsProcessor(({ id, columns }) => {
+  if (id === 'headlamp-nodes') {
+    // Insert the NRC Status column right after the 'Taints' column (which is usually index 3 or 4)
+    // Actually, just pushing it to the end or finding a specific index
+    const taintIndex = columns.findIndex((c: any) => c.id === 'taints');
+    
+    const nrcColumn = {
+      id: 'nrc-status',
+      label: 'NRC Status',
+      render: (node: any) => <NodeListNRCStatus node={node} />,
+    };
+
+    if (taintIndex !== -1) {
+      columns.splice(taintIndex + 1, 0, nrcColumn);
+    } else {
+      columns.push(nrcColumn);
+    }
+  }
+  return columns;
 });

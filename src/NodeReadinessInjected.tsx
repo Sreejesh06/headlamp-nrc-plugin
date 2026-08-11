@@ -61,8 +61,10 @@ function useImpactedPendingPods(nodeName: string) {
     if (pod.spec?.nodeName === nodeName) return true;
 
     // Check if pod status message references NRC taint or unschedulable node
-    const podMessage = (pod.status?.message || '').toLowerCase();
-    const podReason = (pod.status?.reason || '').toLowerCase();
+    // Note: This data lives inside the 'PodScheduled' condition
+    const scheduledCondition = pod.status?.conditions?.find((c: any) => c.type === 'PodScheduled');
+    const podMessage = (scheduledCondition?.message || '').toLowerCase();
+    const podReason = (scheduledCondition?.reason || '').toLowerCase();
 
     return (
       podMessage.includes('node(s) had untolerated taint') ||
@@ -174,33 +176,44 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
 
   return (
     <Box sx={{ mt: 2 }}>
-      {/* 🔴 Top Root-Cause Diagnostic Alert Banner */}
+      {/* Top Root-Cause Diagnostic Alert Banner */}
       {isNodeHeld ? (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 4 }}>
           <AlertTitle sx={{ fontWeight: 'bold' }}>
-            🔴 Node is Tainted & Unscheduleable (Not Accepting Workloads)
+            Node is Tainted & Unscheduleable (Not Accepting Workloads)
           </AlertTitle>
-          <Typography variant="body2" component="div">
-            {failingRulesSummary.map((fail, idx) => (
-              <Box key={idx} sx={{ mt: idx > 0 ? 1 : 0 }}>
-                • <strong>Failing Rule</strong>:{' '}
+          <ul style={{ margin: 0, paddingLeft: '20px' }}>
+            {failingRulesSummary.map((fail, i) => (
+              <li key={i}>
+                <strong>Failing Rule:</strong>{' '}
                 <Link
-                  routeName={NodeReadinessRule.detailsRoute}
-                  params={{ name: fail.ruleName, namespace: fail.ruleNamespace || 'default' }}
+                  routeName="NodeReadinessRules"
+                  params={{ namespace: fail.ruleNamespace, name: fail.ruleName }}
                 >
                   {fail.ruleName}
                 </Link>{' '}
-                | Condition <strong>{fail.conditionType}</strong> is <code>{fail.observed}</code> (Expected: <code>{fail.required}</code>).
-                <br />
-                • <strong>Active NRC Taint</strong>: <code>{fail.taintKey}:NoSchedule</code>
-              </Box>
+                | Condition <strong>{fail.conditionType}</strong> is {fail.observed} (Expected:{' '}
+                {fail.required}).
+                {fail.isTimedOut && (
+                  <strong style={{ color: 'orange', marginLeft: '5px' }}>[TIMED OUT]</strong>
+                )}
+                <Box sx={{ mt: 1, mb: 1 }}>
+                  <Chip
+                    label={`Taint: ${fail.taintKey}:NoSchedule`}
+                    size="small"
+                    color="error"
+                    variant="outlined"
+                    sx={{ fontFamily: 'monospace' }}
+                  />
+                </Box>
+              </li>
             ))}
-          </Typography>
+          </ul>
         </Alert>
       ) : (
-        <Alert severity="success" sx={{ mb: 2 }}>
+        <Alert severity="success" sx={{ mb: 4 }}>
           <AlertTitle sx={{ fontWeight: 'bold' }}>
-            🟢 Node Readiness Verified - Accepting Workloads
+            Node Readiness Verified - Accepting Workloads
           </AlertTitle>
           All active NodeReadinessRule condition checks are satisfied. No NRC taints active.
         </Alert>
@@ -317,3 +330,47 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
     </Box>
   );
 }
+
+/**
+ * A tiny cell component injected into the main Headlamp Nodes list view
+ * to show high-level NRC status without having to click into the node.
+ */
+export function NodeListNRCStatus({ node }: { node: any }) {
+  const [rules, error] = NodeReadinessRule.useList();
+  
+  if (error || !rules) {
+    return <span style={{ opacity: 0.5 }}>-</span>;
+  }
+
+  let isHeld = false;
+  
+  rules.forEach(rule => {
+    const evaluation = rule.status?.nodeEvaluations?.find(
+      (ev: any) => ev.nodeName === node.metadata.name
+    );
+    if (evaluation?.held) {
+      isHeld = true;
+    }
+  });
+
+  if (isHeld) {
+    return (
+      <Chip 
+        label="Tainted (NRC)" 
+        size="small" 
+        color="error" 
+        sx={{ fontWeight: 'bold' }} 
+      />
+    );
+  }
+  
+  return (
+    <Chip 
+      label="Passed" 
+      size="small" 
+      color="success" 
+      variant="outlined" 
+    />
+  );
+}
+
