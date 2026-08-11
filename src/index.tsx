@@ -26,6 +26,7 @@ import { RuleListView } from './RuleListView';
 
 // Register sidebar navigation entry for Node Readiness Rules
 registerSidebarEntry({
+  parent: 'cluster',
   name: 'NodeReadinessRules',
   url: '/nrc/nodereadinessrules',
   icon: 'mdi:checkbox-marked-circle-outline',

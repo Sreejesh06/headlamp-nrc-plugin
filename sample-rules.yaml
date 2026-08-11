@@ -1,0 +1,54 @@
+apiVersion: nrc.x-k8s.io/v1alpha1
+kind: NodeReadinessRule
+metadata:
+  name: k8s-node-memory-check
+  namespace: default
+spec:
+  enforcementMode: continuous
+  timeoutSeconds: 300
+  conditionTypes:
+    - MemoryPressure
+    - DiskPressure
+  nodeSelector: {}
+  taint:
+    key: nrc.x-k8s.io/unschedulable
+    effect: NoSchedule
+status:
+  matchedNodesCount: 1
+  heldNodesCount: 1
+  completedNodesCount: 0
+  nodeEvaluations:
+    - nodeName: nrc-demo-control-plane
+      ready: false
+      held: true
+      startTime: "2026-08-11T12:00:00Z"
+      conditions:
+        - type: MemoryPressure
+          required: "False"
+          status: "False"
+        - type: DiskPressure
+          required: "False"
+          status: "True"
+---
+apiVersion: nrc.x-k8s.io/v1alpha1
+kind: NodeReadinessRule
+metadata:
+  name: ebs-csi-mount-simulation
+  namespace: default
+spec:
+  enforcementMode: dryRun
+  dryRun: true
+  conditionTypes:
+    - VolumeMounted
+  nodeSelector: {}
+status:
+  matchedNodesCount: 1
+  heldNodesCount: 0
+  completedNodesCount: 1
+  nodeEvaluations:
+    - nodeName: nrc-demo-control-plane
+      ready: true
+      conditions:
+        - type: VolumeMounted
+          required: "True"
+          status: "True"

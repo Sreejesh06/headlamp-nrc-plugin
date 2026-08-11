@@ -47,36 +47,10 @@ interface FailingRuleSummary {
 }
 
 /**
- * Hook to fetch standard K8s Events for a node, filtered for NRC taints & rules.
- */
-function useFilteredNRCEvents(nodeName: string) {
-  const [events] = K8s.event.default.useList();
-  if (!events) return [];
-
-  return events.filter(event => {
-    const isThisNode =
-      event.involvedObject?.kind === 'Node' && event.involvedObject?.name === nodeName;
-    if (!isThisNode) return false;
-
-    const message = (event.message || '').toLowerCase();
-    const reason = (event.reason || '').toLowerCase();
-
-    return (
-      message.includes('nrc.x-k8s.io') ||
-      message.includes('nodereadiness') ||
-      message.includes('node.kubernetes.io/unschedulable') ||
-      reason.includes('nodereadiness') ||
-      reason.includes('taint') ||
-      reason.includes('nrc')
-    );
-  });
-}
-
-/**
  * Hook to fetch Pending workload pods impacted by this unschedulable/held node.
  */
 function useImpactedPendingPods(nodeName: string) {
-  const [pods] = K8s.ResourceClasses.Pod.useList();
+  const [pods, error] = K8s.ResourceClasses.Pod.useList();
   if (!pods) return [];
 
   return pods.filter(pod => {
@@ -109,12 +83,22 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
   }
 
   const nodeName = resource.getName();
-  const [rules] = NodeReadinessRule.useList();
-  const nrcEvents = useFilteredNRCEvents(nodeName);
+  const [rules, error] = NodeReadinessRule.useList();
   const pendingPods = useImpactedPendingPods(nodeName);
 
+  if (error) {
+    return (
+      <Box sx={{ mt: 2 }}>
+        <Alert severity="error">
+          <AlertTitle>Error loading NodeReadinessRules</AlertTitle>
+          {error.message || String(error)}
+        </Alert>
+      </Box>
+    );
+  }
+
   if (!rules) {
-    return null;
+    return null; // Keep null here to prevent flashing Loading on fast networks, or change to typography if debugging is needed
   }
 
   const conditionRows: ConditionRow[] = [];
@@ -330,40 +314,6 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
         )}
       </SectionBox>
 
-      {/* NRC Filtered Taint & Readiness Events Section */}
-      <SectionBox title={`NRC Filtered Events (${nrcEvents.length})`} sx={{ mt: 2 }}>
-        {nrcEvents.length === 0 ? (
-          <Typography variant="body2" color="textSecondary">
-            No active NRC taint or readiness events recorded for this node.
-          </Typography>
-        ) : (
-          <SimpleTable
-            data={nrcEvents}
-            columns={[
-              {
-                label: 'Type',
-                getter: ev => (
-                  <StatusLabel status={ev.type === 'Warning' ? 'warning' : 'success'}>
-                    {ev.type}
-                  </StatusLabel>
-                ),
-              },
-              {
-                label: 'Reason',
-                getter: ev => ev.reason || '-',
-              },
-              {
-                label: 'Message',
-                getter: ev => ev.message || '-',
-              },
-              {
-                label: 'Last Seen',
-                getter: ev => ev.lastOccurrence || ev.metadata.creationTimestamp || '-',
-              },
-            ]}
-          />
-        )}
-      </SectionBox>
     </Box>
   );
 }

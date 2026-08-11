@@ -2,6 +2,7 @@
   "name": "nrc-plugin",
   "version": "0.1.0",
   "description": "Your Headlamp plugin",
+  "main": "main.js",
   "scripts": {
     "start": "headlamp-plugin start",
     "build": "headlamp-plugin build",
