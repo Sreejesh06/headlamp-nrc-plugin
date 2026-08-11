@@ -14,10 +14,15 @@
  * limitations under the License.
  */
 
-import { registerRoute, registerSidebarEntry } from '@kinvolk/headlamp-plugin/lib';
+import {
+  registerDetailsViewSection,
+  registerRoute,
+  registerSidebarEntry,
+} from '@kinvolk/headlamp-plugin/lib';
 import { NodeReadinessRuleDetail } from './components/NodeReadinessRuleDetail';
-import { NodeReadinessRuleList } from './components/NodeReadinessRuleList';
-import { NodeReadinessRule } from './resources/nodeReadinessRule';
+import { NodeReadinessRule } from './model';
+import { NodeReadinessInjected } from './NodeReadinessInjected';
+import { RuleListView } from './RuleListView';
 
 // Register sidebar navigation entry for Node Readiness Rules
 registerSidebarEntry({
@@ -27,20 +32,28 @@ registerSidebarEntry({
   label: 'Node Readiness Rules',
 });
 
-// Register route for the List View
+// Register route for the Cluster-Wide Aggregated List View
 registerRoute({
   path: '/nrc/nodereadinessrules',
   sidebar: 'NodeReadinessRules',
   name: 'Node Readiness Rules',
   exact: true,
-  component: () => <NodeReadinessRuleList />,
+  component: () => <RuleListView />,
 });
 
-// Register route for the Details View
+// Register route for the Rule Details View
 registerRoute({
   path: NodeReadinessRule.detailsRoute,
   sidebar: 'NodeReadinessRules',
   name: 'Node Readiness Rule Details',
   exact: true,
   component: () => <NodeReadinessRuleDetail />,
+});
+
+// Unified Node View Injection: Inject NRC condition breakdown & event breakdown into standard K8s Node Detail page
+registerDetailsViewSection(({ resource }) => {
+  if (resource && resource.kind === 'Node') {
+    return <NodeReadinessInjected resource={resource} />;
+  }
+  return null;
 });

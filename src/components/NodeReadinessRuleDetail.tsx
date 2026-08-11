@@ -7,7 +7,7 @@ import {
 } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
 import { Chip, Typography } from '@mui/material';
 import { useParams } from 'react-router-dom';
-import { NodeReadinessRule } from '../resources/nodeReadinessRule';
+import { NodeReadinessRule } from '../model';
 
 export function NodeReadinessRuleDetail() {
   const { name, namespace } = useParams<{ name: string; namespace: string }>();
@@ -39,9 +39,7 @@ export function NodeReadinessRuleDetail() {
         {
           name: 'Timeout (seconds)',
           value:
-            item.spec.timeoutSeconds !== undefined
-              ? `${item.spec.timeoutSeconds}s`
-              : 'Default',
+            item.spec.timeoutSeconds !== undefined ? `${item.spec.timeoutSeconds}s` : 'Default',
         },
       ]}
       extraSections={(item: NodeReadinessRule) => {
