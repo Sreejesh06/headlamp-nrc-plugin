@@ -1,4 +1,4 @@
-import { KubeObject, KubeObjectInterface } from '@kinvolk/headlamp-plugin/lib/K8s/cluster';
+import { KubeObject, KubeObjectInterface } from '@kinvolk/headlamp-plugin/lib/k8s/KubeObject';
 
 export interface EvaluatedNodeInfo {
   name: string;

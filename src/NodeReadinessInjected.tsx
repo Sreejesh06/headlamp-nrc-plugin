@@ -22,7 +22,7 @@ import {
   StatusLabel,
 } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
 import { DetailsViewSectionProps } from '@kinvolk/headlamp-plugin/lib/plugin/registry';
-import { Box, Chip, Typography } from '@mui/material';
+import { Alert, AlertTitle, Box, Chip, Typography } from '@mui/material';
 import { NodeEvaluation, NodeReadinessRule } from './model';
 
 interface ConditionRow {
@@ -36,17 +36,24 @@ interface ConditionRow {
   status: 'Ready' | 'Held' | 'DryRun' | 'Unknown';
 }
 
+interface FailingRuleSummary {
+  ruleName: string;
+  ruleNamespace?: string;
+  conditionType: string;
+  required: string;
+  observed: string;
+  taintKey: string;
+  isTimedOut: boolean;
+}
+
 /**
- * Custom hook to fetch standard Kubernetes Events for a node,
- * filtered specifically by NRC taint keys and NodeReadinessRule names to cut out kubelet noise.
+ * Hook to fetch standard K8s Events for a node, filtered for NRC taints & rules.
  */
 function useFilteredNRCEvents(nodeName: string) {
   const [events] = K8s.event.default.useList();
-
   if (!events) return [];
 
   return events.filter(event => {
-    // Event must be targeted at this specific Node
     const isThisNode =
       event.involvedObject?.kind === 'Node' && event.involvedObject?.name === nodeName;
     if (!isThisNode) return false;
@@ -54,26 +61,49 @@ function useFilteredNRCEvents(nodeName: string) {
     const message = (event.message || '').toLowerCase();
     const reason = (event.reason || '').toLowerCase();
 
-    // NRC Event filter: check for NRC taints, rule references, or readiness condition changes
-    const isNRCEvent =
+    return (
       message.includes('nrc.x-k8s.io') ||
       message.includes('nodereadiness') ||
       message.includes('node.kubernetes.io/unschedulable') ||
       reason.includes('nodereadiness') ||
       reason.includes('taint') ||
-      reason.includes('nrc');
+      reason.includes('nrc')
+    );
+  });
+}
 
-    return isNRCEvent;
+/**
+ * Hook to fetch Pending workload pods impacted by this unschedulable/held node.
+ */
+function useImpactedPendingPods(nodeName: string) {
+  const [pods] = K8s.ResourceClasses.Pod.useList();
+  if (!pods) return [];
+
+  return pods.filter(pod => {
+    // Pod must be in Pending phase
+    if (pod.status?.phase !== 'Pending') return false;
+
+    // Direct node targeting or nodeName match
+    if (pod.spec?.nodeName === nodeName) return true;
+
+    // Check if pod status message references NRC taint or unschedulable node
+    const podMessage = (pod.status?.message || '').toLowerCase();
+    const podReason = (pod.status?.reason || '').toLowerCase();
+
+    return (
+      podMessage.includes('node(s) had untolerated taint') ||
+      podMessage.includes('unschedulable') ||
+      podReason.includes('unschedulable')
+    );
   });
 }
 
 /**
  * NodeReadinessInjected Component:
  * Injected into Headlamp's standard Node Details view using `registerDetailsViewSection`.
- * Renders a per-condition breakdown table (Required vs Observed) and NRC-filtered taint events.
+ * Provides a deep diagnostic answer to: "Why is this node not accepting workloads?"
  */
 export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
-  // Guard clause: Only execute injection when viewing a Node details page
   if (!resource || resource.kind !== 'Node') {
     return null;
   }
@@ -81,37 +111,68 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
   const nodeName = resource.getName();
   const [rules] = NodeReadinessRule.useList();
   const nrcEvents = useFilteredNRCEvents(nodeName);
+  const pendingPods = useImpactedPendingPods(nodeName);
 
   if (!rules) {
     return null;
   }
 
   const conditionRows: ConditionRow[] = [];
+  const failingRulesSummary: FailingRuleSummary[] = [];
+  let isNodeHeld = false;
+  let hasStalledTimeout = false;
 
-  // Iterate across all NodeReadinessRules evaluating this node
   rules.forEach(rule => {
     const evalData: NodeEvaluation | undefined = rule.getEvaluationForNode(nodeName);
     if (!evalData) return;
 
     const mode = rule.enforcementMode;
     const isDryRun = rule.isDryRun;
+    const isTimedOut = rule.isNodeTimedOut(nodeName);
+
+    if (isTimedOut) {
+      hasStalledTimeout = true;
+    }
+
+    const processCondition = (
+      type: string,
+      reqVal: string,
+      obsVal: string,
+      isMatched: boolean
+    ) => {
+      const statusStr = isDryRun ? 'DryRun' : isMatched ? 'Ready' : 'Held';
+
+      if (!isMatched && !isDryRun) {
+        isNodeHeld = true;
+        failingRulesSummary.push({
+          ruleName: rule.metadata.name || 'Unknown',
+          ruleNamespace: rule.metadata.namespace,
+          conditionType: type,
+          required: reqVal,
+          observed: obsVal,
+          taintKey: rule.spec.taint?.key || 'nrc.x-k8s.io/unschedulable',
+          isTimedOut,
+        });
+      }
+
+      conditionRows.push({
+        ruleName: rule.metadata.name || 'Unknown',
+        ruleNamespace: rule.metadata.namespace,
+        enforcementMode: mode,
+        isDryRun,
+        conditionType: type,
+        required: reqVal,
+        observed: obsVal,
+        status: statusStr,
+      });
+    };
 
     if (evalData.conditions && evalData.conditions.length > 0) {
       evalData.conditions.forEach(cond => {
-        const requiredVal = cond.required !== undefined ? String(cond.required) : 'True';
+        const requiredVal = cond.required !== undefined ? String(cond.required) : 'False';
         const observedVal = cond.status || 'Unknown';
         const isMatched = observedVal.toLowerCase() === requiredVal.toLowerCase();
-
-        conditionRows.push({
-          ruleName: rule.metadata.name || 'Unknown',
-          ruleNamespace: rule.metadata.namespace,
-          enforcementMode: mode,
-          isDryRun,
-          conditionType: cond.type,
-          required: requiredVal,
-          observed: observedVal,
-          status: isDryRun ? 'DryRun' : isMatched ? 'Ready' : 'Held',
-        });
+        processCondition(cond.type, requiredVal, observedVal, isMatched);
       });
     } else {
       const conditionTypes = rule.spec.conditionTypes || ['Ready'];
@@ -119,28 +180,60 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
         const reqMap = evalData.requiredConditions || {};
         const obsMap = evalData.observedConditions || {};
 
-        const requiredVal = reqMap[condType] || 'True';
-        const observedVal = obsMap[condType] || (evalData.ready ? 'True' : 'False');
+        const requiredVal = reqMap[condType] || 'False';
+        const observedVal = obsMap[condType] || (evalData.ready ? 'False' : 'True');
         const isMatched = observedVal.toLowerCase() === requiredVal.toLowerCase();
-
-        conditionRows.push({
-          ruleName: rule.metadata.name || 'Unknown',
-          ruleNamespace: rule.metadata.namespace,
-          enforcementMode: mode,
-          isDryRun,
-          conditionType: condType,
-          required: requiredVal,
-          observed: observedVal,
-          status: isDryRun ? 'DryRun' : isMatched ? 'Ready' : 'Held',
-        });
+        processCondition(condType, requiredVal, observedVal, isMatched);
       });
     }
   });
 
   return (
     <Box sx={{ mt: 2 }}>
-      {/* Per-Condition Breakdown Section */}
-      <SectionBox title={`Node Readiness Breakdown (${conditionRows.length} Rules Applied)`}>
+      {/* 🔴 Top Root-Cause Diagnostic Alert Banner */}
+      {isNodeHeld ? (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          <AlertTitle sx={{ fontWeight: 'bold' }}>
+            🔴 Node is Tainted & Unscheduleable (Not Accepting Workloads)
+          </AlertTitle>
+          <Typography variant="body2" component="div">
+            {failingRulesSummary.map((fail, idx) => (
+              <Box key={idx} sx={{ mt: idx > 0 ? 1 : 0 }}>
+                • <strong>Failing Rule</strong>:{' '}
+                <Link
+                  routeName={NodeReadinessRule.detailsRoute}
+                  params={{ name: fail.ruleName, namespace: fail.ruleNamespace || 'default' }}
+                >
+                  {fail.ruleName}
+                </Link>{' '}
+                | Condition <strong>{fail.conditionType}</strong> is <code>{fail.observed}</code> (Expected: <code>{fail.required}</code>).
+                <br />
+                • <strong>Active NRC Taint</strong>: <code>{fail.taintKey}:NoSchedule</code>
+              </Box>
+            ))}
+          </Typography>
+        </Alert>
+      ) : (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          <AlertTitle sx={{ fontWeight: 'bold' }}>
+            🟢 Node Readiness Verified - Accepting Workloads
+          </AlertTitle>
+          All active NodeReadinessRule condition checks are satisfied. No NRC taints active.
+        </Alert>
+      )}
+
+      {/* ⚠️ Stalled Bootstrap Timeout Warning Alert */}
+      {hasStalledTimeout && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <AlertTitle sx={{ fontWeight: 'bold' }}>
+            ⚠️ Bootstrap Stalled - Exceeded Rule Timeout
+          </AlertTitle>
+          One or more readiness rules have held this node longer than specified <code>timeoutSeconds</code>. Check node daemonsets and driver installation scripts.
+        </Alert>
+      )}
+
+      {/* Per-Condition Breakdown Table Section */}
+      <SectionBox title={`Node Readiness Breakdown (${conditionRows.length} Condition Rules)`}>
         {conditionRows.length === 0 ? (
           <Typography variant="body2" color="textSecondary">
             No NodeReadinessRules are currently evaluating this node.
@@ -192,6 +285,45 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
                   }
                   return <StatusLabel status="warning">Projection (DryRun)</StatusLabel>;
                 },
+              },
+            ]}
+          />
+        )}
+      </SectionBox>
+
+      {/* 📦 Impacted Pending Workloads Section */}
+      <SectionBox title={`Impacted Pending Workloads (${pendingPods.length})`} sx={{ mt: 2 }}>
+        {pendingPods.length === 0 ? (
+          <Typography variant="body2" color="textSecondary">
+            No pending workload pods currently blocked by this node's readiness state.
+          </Typography>
+        ) : (
+          <SimpleTable
+            data={pendingPods}
+            columns={[
+              {
+                label: 'Pod Name',
+                getter: pod => (
+                  <Link routeName="pod" params={{ name: pod.getName(), namespace: pod.getNamespace() }}>
+                    {pod.getName()}
+                  </Link>
+                ),
+              },
+              {
+                label: 'Namespace',
+                getter: pod => pod.getNamespace(),
+              },
+              {
+                label: 'Status Reason',
+                getter: pod => (
+                  <StatusLabel status="warning">
+                    {pod.status?.reason || 'Unschedulable'}
+                  </StatusLabel>
+                ),
+              },
+              {
+                label: 'Age',
+                getter: pod => pod.getAge() || '-',
               },
             ]}
           />

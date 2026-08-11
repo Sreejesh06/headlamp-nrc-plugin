@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { KubeObject, KubeObjectInterface } from '@kinvolk/headlamp-plugin/lib/K8s/cluster';
+import { KubeObject, KubeObjectInterface } from '@kinvolk/headlamp-plugin/lib/k8s/KubeObject';
 
 export interface ConditionEvaluation {
   type: string;
@@ -196,4 +196,27 @@ export class NodeReadinessRule extends KubeObject<NodeReadinessRuleInterface> {
   getEvaluationForNode(nodeName: string): NodeEvaluation | undefined {
     return this.evaluations.find(ev => ev.nodeName === nodeName);
   }
+
+  /**
+   * Helper to check if a node evaluation has exceeded spec.timeoutSeconds (stalled bootstrap).
+   */
+  isNodeTimedOut(nodeName: string): boolean {
+    const evalData = this.getEvaluationForNode(nodeName);
+    if (!evalData || !evalData.held || !this.spec.timeoutSeconds) {
+      return false;
+    }
+
+    if (evalData.startTime || evalData.lastTransitionTime || evalData.timestamp) {
+      const startTime = new Date(
+        evalData.startTime || evalData.lastTransitionTime || evalData.timestamp || ''
+      ).getTime();
+      if (!isNaN(startTime)) {
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+        return elapsedSeconds > this.spec.timeoutSeconds;
+      }
+    }
+
+    return evalData.timedOut === true || evalData.stalled === true;
+  }
 }
+
