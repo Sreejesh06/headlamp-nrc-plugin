@@ -84,14 +84,23 @@ export function RuleListView() {
           id: 'heldCount',
           label: 'Held Nodes',
           getValue: (item: NodeReadinessRule) => item.heldCount,
-          render: (item: NodeReadinessRule) => (
-            <Box
-              component="span"
-              sx={{ color: item.heldCount > 0 ? 'error.main' : 'text.primary', fontWeight: 'bold' }}
-            >
-              {item.heldCount}
-            </Box>
-          ),
+          render: (item: NodeReadinessRule) => {
+            if (item.heldCount === 0) {
+              return <Box component="span" sx={{ fontWeight: 'bold' }}>0</Box>;
+            }
+            if (item.isDryRun) {
+              return (
+                <Box component="span" sx={{ color: 'warning.main', fontWeight: 'bold' }}>
+                  {item.heldCount} (Projected)
+                </Box>
+              );
+            }
+            return (
+              <Box component="span" sx={{ color: 'error.main', fontWeight: 'bold' }}>
+                {item.heldCount}
+              </Box>
+            );
+          },
         },
         {
           id: 'completedCount',

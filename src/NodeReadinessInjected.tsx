@@ -1,19 +1,3 @@
-/*
- * Copyright 2025 The Kubernetes Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { K8s } from '@kinvolk/headlamp-plugin/lib';
 import {
   Link,
@@ -24,6 +8,7 @@ import {
 import { DetailsViewSectionProps } from '@kinvolk/headlamp-plugin/lib/plugin/registry';
 import { Alert, AlertTitle, Box, Chip, Typography } from '@mui/material';
 import { NodeEvaluation, NodeReadinessRule } from './model';
+import { useNodeReadinessMap } from './hooks/useNodeReadinessMap';
 
 interface ConditionRow {
   ruleName: string;
@@ -54,14 +39,9 @@ function useImpactedPendingPods(nodeName: string) {
   if (!pods) return [];
 
   return pods.filter(pod => {
-    // Pod must be in Pending phase
     if (pod.status?.phase !== 'Pending') return false;
-
-    // Direct node targeting or nodeName match
     if (pod.spec?.nodeName === nodeName) return true;
 
-    // Check if pod status message references NRC taint or unschedulable node
-    // Note: This data lives inside the 'PodScheduled' condition
     const scheduledCondition = pod.status?.conditions?.find((c: any) => c.type === 'PodScheduled');
     const podMessage = (scheduledCondition?.message || '').toLowerCase();
     const podReason = (scheduledCondition?.reason || '').toLowerCase();
@@ -77,7 +57,6 @@ function useImpactedPendingPods(nodeName: string) {
 /**
  * NodeReadinessInjected Component:
  * Injected into Headlamp's standard Node Details view using `registerDetailsViewSection`.
- * Provides a deep diagnostic answer to: "Why is this node not accepting workloads?"
  */
 export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
   if (!resource || resource.kind !== 'Node') {
@@ -85,7 +64,7 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
   }
 
   const nodeName = resource.getName();
-  const [rules, error] = NodeReadinessRule.useList();
+  const { nodeImpactMap, error, isLoading, rules } = useNodeReadinessMap();
   const pendingPods = useImpactedPendingPods(nodeName);
 
   if (error) {
@@ -99,13 +78,13 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
     );
   }
 
-  if (!rules) {
-    return null; // Keep null here to prevent flashing Loading on fast networks, or change to typography if debugging is needed
+  if (isLoading || !rules) {
+    return null; 
   }
 
+  const impact = nodeImpactMap.get(nodeName);
   const conditionRows: ConditionRow[] = [];
   const failingRulesSummary: FailingRuleSummary[] = [];
-  let isNodeHeld = false;
   let hasStalledTimeout = false;
 
   rules.forEach(rule => {
@@ -129,7 +108,6 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
       const statusStr = isDryRun ? 'DryRun' : isMatched ? 'Ready' : 'Held';
 
       if (!isMatched && !isDryRun) {
-        isNodeHeld = true;
         failingRulesSummary.push({
           ruleName: rule.metadata.name || 'Unknown',
           ruleNamespace: rule.metadata.namespace,
@@ -174,21 +152,37 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
     }
   });
 
-  return (
-    <Box sx={{ mt: 2 }}>
-      {/* Top Root-Cause Diagnostic Alert Banner */}
-      {isNodeHeld ? (
-        <Alert severity="error" sx={{ mb: 4 }}>
+  const renderBanner = () => {
+    if (!impact || (!impact.isHeld && !impact.isDryRunHeld)) {
+      return (
+        <Alert severity="success" sx={{ mb: 4 }}>
           <AlertTitle sx={{ fontWeight: 'bold' }}>
-            Node is Tainted & Unscheduleable (Not Accepting Workloads)
+            Node Readiness Verified - Accepting Workloads
+          </AlertTitle>
+          All active NodeReadinessRule condition checks are satisfied. No NRC taints active.
+        </Alert>
+      );
+    }
+
+    if (impact.isHeld) {
+      const isBootstrapOnly = Array.from(impact.enforcementModes).every(m => m === 'bootstrap-only');
+      const severity = isBootstrapOnly ? 'info' : 'error';
+      const title = isBootstrapOnly 
+        ? 'Node Pending Initial Bootstrap Readiness' 
+        : 'Node is Tainted & Unscheduleable (Not Accepting Workloads)';
+
+      return (
+        <Alert severity={severity} sx={{ mb: 4 }}>
+          <AlertTitle sx={{ fontWeight: 'bold' }}>
+            {title}
           </AlertTitle>
           <ul style={{ margin: 0, paddingLeft: '20px' }}>
             {failingRulesSummary.map((fail, i) => (
               <li key={i}>
                 <strong>Failing Rule:</strong>{' '}
                 <Link
-                  routeName="NodeReadinessRules"
-                  params={{ namespace: fail.ruleNamespace, name: fail.ruleName }}
+                  routeName={NodeReadinessRule.detailsRoute}
+                  params={{ namespace: fail.ruleNamespace || 'default', name: fail.ruleName }}
                 >
                   {fail.ruleName}
                 </Link>{' '}
@@ -201,7 +195,7 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
                   <Chip
                     label={`Taint: ${fail.taintKey}:NoSchedule`}
                     size="small"
-                    color="error"
+                    color={severity}
                     variant="outlined"
                     sx={{ fontFamily: 'monospace' }}
                   />
@@ -210,16 +204,38 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
             ))}
           </ul>
         </Alert>
-      ) : (
-        <Alert severity="success" sx={{ mb: 4 }}>
-          <AlertTitle sx={{ fontWeight: 'bold' }}>
-            Node Readiness Verified - Accepting Workloads
-          </AlertTitle>
-          All active NodeReadinessRule condition checks are satisfied. No NRC taints active.
-        </Alert>
-      )}
+      );
+    }
 
-      {/* ⚠️ Stalled Bootstrap Timeout Warning Alert */}
+    if (impact.isDryRunHeld) {
+      return (
+        <Alert severity="warning" sx={{ mb: 4 }}>
+          <AlertTitle sx={{ fontWeight: 'bold' }}>
+            Simulation: Node Would Be Tainted (Dry-Run Mode)
+          </AlertTitle>
+          This node is currently failing one or more rules running in Dry-Run mode. If these rules were actively enforcing, this node would be tainted and unscheduleable.
+          <ul style={{ margin: 0, paddingLeft: '20px', marginTop: '10px' }}>
+            {impact.dryRunBy.map((rule, i) => (
+              <li key={i}>
+                <strong>Projected Failing Rule:</strong>{' '}
+                <Link
+                  routeName={NodeReadinessRule.detailsRoute}
+                  params={{ namespace: rule.metadata.namespace || 'default', name: rule.metadata.name }}
+                >
+                  {rule.metadata.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      );
+    }
+  };
+
+  return (
+    <Box sx={{ mt: 2 }}>
+      {renderBanner()}
+
       {hasStalledTimeout && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           <AlertTitle sx={{ fontWeight: 'bold' }}>
@@ -229,7 +245,6 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
         </Alert>
       )}
 
-      {/* Per-Condition Breakdown Table Section */}
       <SectionBox title={`Node Readiness Breakdown (${conditionRows.length} Condition Rules)`}>
         {conditionRows.length === 0 ? (
           <Typography variant="body2" color="textSecondary">
@@ -288,7 +303,6 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
         )}
       </SectionBox>
 
-      {/* 📦 Impacted Pending Workloads Section */}
       <SectionBox title={`Impacted Pending Workloads (${pendingPods.length})`} sx={{ mt: 2 }}>
         {pendingPods.length === 0 ? (
           <Typography variant="body2" color="textSecondary">
@@ -326,34 +340,49 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
           />
         )}
       </SectionBox>
-
     </Box>
   );
 }
 
 /**
- * A tiny cell component injected into the main Headlamp Nodes list view
- * to show high-level NRC status without having to click into the node.
+ * A tiny cell component injected into the main Headlamp Nodes list view.
+ * Utilizes the shared memoized useNodeReadinessMap hook so per-row rendering is O(1)
+ * instead of causing a full rule set iteration per node.
  */
 export function NodeListNRCStatus({ node }: { node: any }) {
-  const [rules, error] = NodeReadinessRule.useList();
+  const { nodeImpactMap, error, isLoading } = useNodeReadinessMap();
   
-  if (error || !rules) {
+  if (error || isLoading) {
     return <span style={{ opacity: 0.5 }}>-</span>;
   }
 
-  let isHeld = false;
-  
-  rules.forEach(rule => {
-    const evaluation = rule.status?.nodeEvaluations?.find(
-      (ev: any) => ev.nodeName === node.metadata.name
-    );
-    if (evaluation?.held) {
-      isHeld = true;
-    }
-  });
+  const impact = nodeImpactMap.get(node.metadata.name);
 
-  if (isHeld) {
+  if (!impact || (!impact.isHeld && !impact.isDryRunHeld)) {
+    return (
+      <Chip 
+        label="Passed" 
+        size="small" 
+        color="success" 
+        variant="outlined" 
+      />
+    );
+  }
+
+  if (impact.isHeld) {
+    const isBootstrapOnly = Array.from(impact.enforcementModes).every(m => m === 'bootstrap-only');
+    
+    if (isBootstrapOnly) {
+      return (
+        <Chip 
+          label="Pending (Bootstrap)" 
+          size="small" 
+          color="info" 
+          sx={{ fontWeight: 'bold' }} 
+        />
+      );
+    }
+
     return (
       <Chip 
         label="Tainted (NRC)" 
@@ -363,14 +392,18 @@ export function NodeListNRCStatus({ node }: { node: any }) {
       />
     );
   }
-  
-  return (
-    <Chip 
-      label="Passed" 
-      size="small" 
-      color="success" 
-      variant="outlined" 
-    />
-  );
+
+  if (impact.isDryRunHeld) {
+    return (
+      <Chip 
+        label="Projected Taint" 
+        size="small" 
+        color="warning" 
+        sx={{ fontWeight: 'bold' }} 
+      />
+    );
+  }
+
+  return null;
 }
 
