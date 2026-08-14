@@ -87,9 +87,7 @@ const mockDryRunRule = new NodeReadinessRule({
       {
         nodeName: 'node-worker-01',
         ready: true,
-        conditions: [
-          { type: 'VolumeMounted', required: 'True', status: 'True' },
-        ],
+        conditions: [{ type: 'VolumeMounted', required: 'True', status: 'True' }],
       },
     ],
   },
@@ -99,7 +97,8 @@ const mockEvents = [
   {
     type: 'Warning',
     reason: 'NodeReadinessTaintApplied',
-    message: 'Applied taint nrc.x-k8s.io/unschedulable due to DiskPressure condition on NodeReadinessRule k8s-node-memory-check',
+    message:
+      'Applied taint nrc.x-k8s.io/unschedulable due to DiskPressure condition on NodeReadinessRule k8s-node-memory-check',
     involvedObject: { kind: 'Node', name: 'node-worker-01' },
     lastOccurrence: '2 mins ago',
     metadata: { creationTimestamp: '2026-08-11T14:20:00Z' },
@@ -114,7 +113,8 @@ const mockPods = [
     status: {
       phase: 'Pending',
       reason: 'Unschedulable',
-      message: '0/5 nodes are available: 1 node(s) had untolerated taint {nrc.x-k8s.io/unschedulable: }',
+      message:
+        '0/5 nodes are available: 1 node(s) had untolerated taint {nrc.x-k8s.io/unschedulable: }',
     },
     spec: {
       nodeName: 'node-worker-01',
@@ -127,7 +127,8 @@ const mockPods = [
     status: {
       phase: 'Pending',
       reason: 'Unschedulable',
-      message: '0/5 nodes are available: 1 node(s) had untolerated taint {nrc.x-k8s.io/unschedulable: }',
+      message:
+        '0/5 nodes are available: 1 node(s) had untolerated taint {nrc.x-k8s.io/unschedulable: }',
     },
     spec: {
       nodeName: 'node-worker-01',
@@ -140,10 +141,7 @@ const meta: Meta<typeof NodeReadinessInjected> = {
   component: NodeReadinessInjected,
   decorators: [
     Story => {
-      NodeReadinessRule.useList = (() => [
-        [mockContinuousRule, mockDryRunRule],
-        null,
-      ]) as any;
+      NodeReadinessRule.useList = (() => [[mockContinuousRule, mockDryRunRule], null]) as any;
 
       K8s.event.default.useList = (() => [mockEvents, null]) as any;
       K8s.ResourceClasses.Pod.useList = (() => [mockPods, null]) as any;

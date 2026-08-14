@@ -86,7 +86,11 @@ export function RuleListView() {
           getValue: (item: NodeReadinessRule) => item.heldCount,
           render: (item: NodeReadinessRule) => {
             if (item.heldCount === 0) {
-              return <Box component="span" sx={{ fontWeight: 'bold' }}>0</Box>;
+              return (
+                <Box component="span" sx={{ fontWeight: 'bold' }}>
+                  0
+                </Box>
+              );
             }
             if (item.isDryRun) {
               return (

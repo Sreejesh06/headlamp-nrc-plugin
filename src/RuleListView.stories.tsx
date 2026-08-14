@@ -44,7 +44,12 @@ const mockContinuousRule = new NodeReadinessRule({
     completedNodesCount: 10,
     nodeEvaluations: [
       { nodeName: 'node-worker-1', ready: true, bootstrapCompleted: true },
-      { nodeName: 'node-worker-2', ready: false, held: true, message: 'Awaiting MemoryPressure clear' },
+      {
+        nodeName: 'node-worker-2',
+        ready: false,
+        held: true,
+        message: 'Awaiting MemoryPressure clear',
+      },
     ],
   },
 });
@@ -68,9 +73,7 @@ const mockBootstrapRule = new NodeReadinessRule({
     matchedNodesCount: 8,
     heldNodesCount: 0,
     completedNodesCount: 8,
-    nodeEvaluations: [
-      { nodeName: 'node-gpu-1', ready: true, bootstrapCompleted: true },
-    ],
+    nodeEvaluations: [{ nodeName: 'node-gpu-1', ready: true, bootstrapCompleted: true }],
   },
 });
 

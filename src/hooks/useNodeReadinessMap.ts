@@ -18,16 +18,16 @@ export function useNodeReadinessMap() {
   // making per-row lookup in the Nodes table O(1).
   const nodeImpactMap = useMemo(() => {
     const map = new Map<string, NodeImpact>();
-    
+
     if (!rules) return map;
 
-    rules.forEach((rule) => {
+    rules.forEach(rule => {
       const isDryRun = rule.spec?.dryRun === true || rule.spec?.enforcementMode === 'dryRun';
       const enforcementMode = rule.spec?.enforcementMode || 'continuous';
 
       rule.status?.nodeEvaluations?.forEach((evaluation: any) => {
         if (!evaluation.held) return;
-        
+
         const nodeName = evaluation.nodeName;
         if (!map.has(nodeName)) {
           map.set(nodeName, {

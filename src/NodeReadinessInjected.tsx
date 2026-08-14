@@ -7,8 +7,8 @@ import {
 } from '@kinvolk/headlamp-plugin/lib/CommonComponents';
 import { DetailsViewSectionProps } from '@kinvolk/headlamp-plugin/lib/plugin/registry';
 import { Alert, AlertTitle, Box, Chip, Typography } from '@mui/material';
-import { NodeEvaluation, NodeReadinessRule } from './model';
 import { useNodeReadinessMap } from './hooks/useNodeReadinessMap';
+import { NodeEvaluation, NodeReadinessRule } from './model';
 
 interface ConditionRow {
   ruleName: string;
@@ -35,7 +35,7 @@ interface FailingRuleSummary {
  * Hook to fetch Pending workload pods impacted by this unschedulable/held node.
  */
 function useImpactedPendingPods(nodeName: string) {
-  const [pods, error] = K8s.ResourceClasses.Pod.useList();
+  const [pods] = K8s.ResourceClasses.Pod.useList();
   if (!pods) return [];
 
   return pods.filter(pod => {
@@ -79,7 +79,7 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
   }
 
   if (isLoading || !rules) {
-    return null; 
+    return null;
   }
 
   const impact = nodeImpactMap.get(nodeName);
@@ -99,12 +99,7 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
       hasStalledTimeout = true;
     }
 
-    const processCondition = (
-      type: string,
-      reqVal: string,
-      obsVal: string,
-      isMatched: boolean
-    ) => {
+    const processCondition = (type: string, reqVal: string, obsVal: string, isMatched: boolean) => {
       const statusStr = isDryRun ? 'DryRun' : isMatched ? 'Ready' : 'Held';
 
       if (!isMatched && !isDryRun) {
@@ -165,17 +160,17 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
     }
 
     if (impact.isHeld) {
-      const isBootstrapOnly = Array.from(impact.enforcementModes).every(m => m === 'bootstrap-only');
+      const isBootstrapOnly = Array.from(impact.enforcementModes).every(
+        m => m === 'bootstrap-only'
+      );
       const severity = isBootstrapOnly ? 'info' : 'error';
-      const title = isBootstrapOnly 
-        ? 'Node Pending Initial Bootstrap Readiness' 
+      const title = isBootstrapOnly
+        ? 'Node Pending Initial Bootstrap Readiness'
         : 'Node is Tainted & Unscheduleable (Not Accepting Workloads)';
 
       return (
         <Alert severity={severity} sx={{ mb: 4 }}>
-          <AlertTitle sx={{ fontWeight: 'bold' }}>
-            {title}
-          </AlertTitle>
+          <AlertTitle sx={{ fontWeight: 'bold' }}>{title}</AlertTitle>
           <ul style={{ margin: 0, paddingLeft: '20px' }}>
             {failingRulesSummary.map((fail, i) => (
               <li key={i}>
@@ -213,14 +208,18 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
           <AlertTitle sx={{ fontWeight: 'bold' }}>
             Simulation: Node Would Be Tainted (Dry-Run Mode)
           </AlertTitle>
-          This node is currently failing one or more rules running in Dry-Run mode. If these rules were actively enforcing, this node would be tainted and unscheduleable.
+          This node is currently failing one or more rules running in Dry-Run mode. If these rules
+          were actively enforcing, this node would be tainted and unscheduleable.
           <ul style={{ margin: 0, paddingLeft: '20px', marginTop: '10px' }}>
             {impact.dryRunBy.map((rule, i) => (
               <li key={i}>
                 <strong>Projected Failing Rule:</strong>{' '}
                 <Link
                   routeName={NodeReadinessRule.detailsRoute}
-                  params={{ namespace: rule.metadata.namespace || 'default', name: rule.metadata.name }}
+                  params={{
+                    namespace: rule.metadata.namespace || 'default',
+                    name: rule.metadata.name,
+                  }}
                 >
                   {rule.metadata.name}
                 </Link>
@@ -241,7 +240,8 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
           <AlertTitle sx={{ fontWeight: 'bold' }}>
             ⚠️ Bootstrap Stalled - Exceeded Rule Timeout
           </AlertTitle>
-          One or more readiness rules have held this node longer than specified <code>timeoutSeconds</code>. Check node daemonsets and driver installation scripts.
+          One or more readiness rules have held this node longer than specified{' '}
+          <code>timeoutSeconds</code>. Check node daemonsets and driver installation scripts.
         </Alert>
       )}
 
@@ -315,7 +315,10 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
               {
                 label: 'Pod Name',
                 getter: pod => (
-                  <Link routeName="pod" params={{ name: pod.getName(), namespace: pod.getNamespace() }}>
+                  <Link
+                    routeName="pod"
+                    params={{ name: pod.getName(), namespace: pod.getNamespace() }}
+                  >
                     {pod.getName()}
                   </Link>
                 ),
@@ -351,7 +354,7 @@ export function NodeReadinessInjected({ resource }: DetailsViewSectionProps) {
  */
 export function NodeListNRCStatus({ node }: { node: any }) {
   const { nodeImpactMap, error, isLoading } = useNodeReadinessMap();
-  
+
   if (error || isLoading) {
     return <span style={{ opacity: 0.5 }}>-</span>;
   }
@@ -359,51 +362,26 @@ export function NodeListNRCStatus({ node }: { node: any }) {
   const impact = nodeImpactMap.get(node.metadata.name);
 
   if (!impact || (!impact.isHeld && !impact.isDryRunHeld)) {
-    return (
-      <Chip 
-        label="Passed" 
-        size="small" 
-        color="success" 
-        variant="outlined" 
-      />
-    );
+    return <Chip label="Passed" size="small" color="success" variant="outlined" />;
   }
 
   if (impact.isHeld) {
     const isBootstrapOnly = Array.from(impact.enforcementModes).every(m => m === 'bootstrap-only');
-    
+
     if (isBootstrapOnly) {
       return (
-        <Chip 
-          label="Pending (Bootstrap)" 
-          size="small" 
-          color="info" 
-          sx={{ fontWeight: 'bold' }} 
-        />
+        <Chip label="Pending (Bootstrap)" size="small" color="info" sx={{ fontWeight: 'bold' }} />
       );
     }
 
-    return (
-      <Chip 
-        label="Tainted (NRC)" 
-        size="small" 
-        color="error" 
-        sx={{ fontWeight: 'bold' }} 
-      />
-    );
+    return <Chip label="Tainted (NRC)" size="small" color="error" sx={{ fontWeight: 'bold' }} />;
   }
 
   if (impact.isDryRunHeld) {
     return (
-      <Chip 
-        label="Projected Taint" 
-        size="small" 
-        color="warning" 
-        sx={{ fontWeight: 'bold' }} 
-      />
+      <Chip label="Projected Taint" size="small" color="warning" sx={{ fontWeight: 'bold' }} />
     );
   }
 
   return null;
 }
-

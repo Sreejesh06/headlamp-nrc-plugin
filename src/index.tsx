@@ -67,10 +67,11 @@ registerResourceTableColumnsProcessor(({ id, columns }) => {
     // Insert the NRC Status column right after the 'Taints' column (which is usually index 3 or 4)
     // Actually, just pushing it to the end or finding a specific index
     const taintIndex = columns.findIndex((c: any) => c.id === 'taints');
-    
-    const nrcColumn = {
+
+    const nrcColumn: any = {
       id: 'nrc-status',
       label: 'NRC Status',
+      getValue: (node: any) => node.metadata?.name,
       render: (node: any) => <NodeListNRCStatus node={node} />,
     };
 

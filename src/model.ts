@@ -14,7 +14,10 @@
  * limitations under the License.
  */
 
-import { KubeObject, KubeObjectInterface } from '@kinvolk/headlamp-plugin/lib/k8s/cluster';
+import { K8s } from '@kinvolk/headlamp-plugin/lib';
+
+export type KubeObjectInterface = K8s.cluster.KubeObjectInterface;
+export const KubeObject = K8s.cluster.KubeObject;
 
 export interface ConditionEvaluation {
   type: string;
@@ -166,6 +169,7 @@ export class NodeReadinessRule extends KubeObject<NodeReadinessRuleInterface> {
         };
       }
       return {
+        ...item,
         nodeName: item.nodeName || item.name || 'Unknown Node',
         ready: item.ready ?? item.status === 'Ready',
         held: item.held ?? item.ready === false,
@@ -219,4 +223,3 @@ export class NodeReadinessRule extends KubeObject<NodeReadinessRuleInterface> {
     return evalData.timedOut === true || evalData.stalled === true;
   }
 }
-
